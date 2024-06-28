@@ -1,0 +1,364 @@
+---
+title: 'Klasyfikacja obiektów o okrągłym kształcie'
+subtitle: 'Projekt zaliczeniowy - Automatyczna Analiza Obrazu'
+author:
+  - name: 'Szymon Olędzki'
+    affiliations:
+      - 'Politechnika Lubelska'
+language: 'polski.yml'
+format:
+  html: 
+    theme: pulse
+    toc: true
+    toc-title: 'Spis treści'
+    toc-location: left
+    embed-resources: true
+    smooth-scroll: true
+    code-fold: true
+    code-block-border-left: '#795FA9'
+    code-tools:
+      source: https://github.com/spoledzki/Computer_Vision_Balls
+    code-link: true
+    other-links:
+      - text: Repozytorium GitHub
+        icon: github
+        href: https://github.com/spoledzki/Computer_Vision_Balls
+      - text: Zbiór danych na Kaggle
+        icon: filetype-csv
+        href: https://www.kaggle.com/datasets/gpiosenka/balls-image-classification
+      - text: Przygotowanie danych i modeli
+        icon: code
+        href: https://www.kaggle.com/code/szymonoldzki/aao-projekt-modele?scriptVersionId=185905725
+      - text: Ewaluacja modeli
+        icon: code
+        href: https://www.kaggle.com/code/szymonoldzki/aao-projekt-ewaluacja?scriptVersionId=185949426
+editor: visual
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options: 
+  chunk_output_type: console
+---
+
+# Cel projektu i charakterystyka zbioru danych
+
+Celem niniejszego projektu jest stworzenie modelu konwolucyjnej sieci neuronowej, której zadaniem jest klasyfikacja 30 różnych rodzajów obiektów o kształcie okrągłym lub do niego zbliżonym.
+
+Zbiór danych, który wykorzystałem do zrealizowania zadania to `30 Types of Balls Updated`, dostępny na platformie Kaggle. Zawiera on 3895 zdjęć obiektów, podzielonych na następujące klasy:
+
+-   0 - Baseball - piłki baseballowe
+-   1 - Basketball - piłki do koszykówki
+-   2 - Beachballs - piłki plażowe
+-   3 - Billiard ball - bile bilardowe
+-   4 - Bowling ball - kule do kręgli
+-   5 - Brass - kule mosiężne
+-   6 - Buckeyballs - fulereny
+-   7 - Cannon ball - kule armatnie
+-   8 - Crochet ball - piłki szydełkowane
+-   9 - Cricket ball - piłki do krykieta
+-   10 - Crystal ball - kule kryształowe
+-   11 - Eyeballs - gałki oczne
+-   12 - Football - piłki do futbolu amerykańskiego
+-   13 - Golf ball - piłki golfowe
+-   14 - Marble - kulki szklane
+-   15 - Meat ball - klopsiki
+-   16 - Medicine ball - piłki lekarskie
+-   17 - Paint balls - kulki do paintballa
+-   18 - Pokeman balls - Pokeballe
+-   19 - Puffballs - purchawki
+-   20 - Rubberband ball - piłki z gumek
+-   21 - Screwballs - ludzkie twarze (*ang.* świrusy)
+-   22 - Sepak takraw ball - piłki do sepak takraw
+-   23 - Soccer ball - piłki nożne
+-   24 - Tennis ball - piłki tenisowe
+-   25 - Tether ball - piłki do tetherballa
+-   26 - Volley ball - piłki do siatkówki
+-   27 - Water polo ball - piłki do wodnego polo
+-   28 - Wiffle ball - piłki do wiffle balla
+-   29 - Wrecking ball - kule wyburzeniowe
+
+Oryginalny zbiór podzielony jest na 3 foldery, dla zbiorów treningowego, walidacyjnego i testowego w taki sposób, by dla każdej z klas w zbiorze walidacyjnym i testowym było po 5 zdjęć. Nie jest to proporcja jaką chciałem zastosować przy uczeniu i ewaluacji modeli, zatem przed przystąpieniem do uczenia zmieniłem proporcję plików w poszczególnych zbiorach (70%/15%/15%).
+
+# Wykorzystane architektury sieci neuronowych
+
+```{r Biblioteki}
+library(tidyverse)
+library(keras)
+library(tfdatasets)
+library(yardstick)
+library(ggplot2)
+```
+
+W ramach projektu uczenie przeprowadzę na 4 zaproponowanych przeze mnie autorskich architekturach oraz na 2 wcześniej nauczonych dostępnych w pakiecie Keras. Oprócz klasycznej metryki dokładności wyniki poszczególnych modeli porównam również dla metryk klasy `top_n`, dla 3 i 10 klas z największym prawdopodobieństwem.
+
+## Architektury własne
+
+### Pierwsza sieć
+
+Jako pierwszą, "benchmarkową" architekturę wybrałem prostą sieć składającą się z trzech warstw kowolucyjnych (odpowiednio $32$, $64$ i $128$ filtrów) połączonych warstwami max-pooling (rozmiar okna: $2\times2$) oraz jednej warstwy gęstej ($512$ neuronów) poprzedzającej warstwę wyjściową.
+
+-   Dla wszystkich warstw z wyjątkiem wyjściowej zastosowałem funkcję aktywacji ReLU, w przypadku tej ostatniej funkcją aktywacji jest Softmax.
+
+-   Wybrana przeze mnie funkcja optymalizacji to Adam.
+
+-   Sieć jest trenowana przez $80$ epok z $85$ krokami w każdej z nich.
+
+```{r Architektura 1, echo=TRUE}
+model <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu', input_shape = c(224, 224, 3)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = 'relu') %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = 'relu') %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  
+  layer_flatten() %>%
+  layer_dense(units = 512, activation = 'relu') %>%
+  layer_dense(units = 30, activation = 'softmax')
+```
+
+```{r Summary Architektura 1}
+summary(model)
+```
+
+![Wyniki uczenia pierwszej sieci](img/model1_plot.png)
+
+Na pierwszy rzut oka można zauważyć ogromne przeuczenie, a dokładność na zbiorze walidacyjnym po 80 epokach osiąga ledwie $0.25$. Wyniki dla metryk `top3` i `top10` również nie są satysfakcjonujące.
+
+### Druga sieć
+
+Moja druga propozycja architektury opiera się na poprawieniu pierwszej propozycji przez wzgląd na jej duże przeuczenie. Tym razem po każdej warstwie konwolucyjnej zastosowałem `batch normalization`, żeby poprawić stabilność treningu, dodałem również warstwy `dropout` o wartościach współczynnika $0.25$ po warstwach konwolucyjnych i $0.5$ przed warstwą wyjściową oraz regularyzację L2 dla warstwy gęstej, żeby zmniejszyć przeuczenie.
+
+Zmian dokonałem również w ramach optymalizatora - nadal jest to Adam, jednak tym razem z ustalonym współczynnikiem uczenia $0.001$.
+
+Do procesu uczenia dodałem również dwa callbacki:
+
+-   **Reduce Learning Rate on Plateau** - dynamicznie zmniejsza współczynnik uczenia, gdy wynik modelu na zbiorze walidacyjnym przestaje się poprawiać po 5 epokach,
+
+-   **Early Stopping** - pomaga zapobiegać przeuczeniu zatrzymując trening, gdy wynik modelu na zbiorze walidacyjnym przestaje się poprawiać po 10 epokach.
+
+```{r Architektura 2, echo=TRUE}
+model <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu', input_shape = c(224, 224, 3)) %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(rate = 0.25) %>%
+  
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = 'relu') %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(rate = 0.25) %>%
+  
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = 'relu') %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(rate = 0.25) %>%
+  
+  layer_flatten() %>%
+  layer_dense(units = 512, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 30, activation = 'softmax')
+```
+
+```{r Summary Architektura 2}
+summary(model)
+```
+
+![Wyniki uczenia drugiej sieci](img/model2_plot.png)
+
+Zauważyć można zdecydowaną poprawę, jak widać zastosowane kroki przyniosły oczekiwany efekt, chociaż od pewnego momentu nadal można zaobserwować przeuczenie. Dokładność na zbiorze walidacyjnym wyniosła tym razem około $0.5$, co jest zauważalnie lepszym, aczkolwiek nadal niesatysfakcjonującym wynikiem. Zastosowane callbacki również zadziałały skutecznie - sieć zakończyła uczenie wcześniej, gdy wynik na zbiorze walidacyjnym przestał się poprawiać, mimo założonych 80 epok uczenia. Metryka `top3` wskazuje $0.75$ dokładności, natomiast `top10` ponad $0.9$.
+
+### Trzecia sieć
+
+Architektura trzeciej sieci różni się od poprzedniej w trzech aspektach. Zamiast jednej warstwy gęstej zastosowałem dwie, ale z mniejszą liczbą neuronów. Drugą zmianą jest zmniejszona wartość współczynnika we wszystkich warstwach `dropout`, tym razem dla wszystkich jest to $0.2$.
+
+Ostatnią zmianą jest zmniejszenie początkowego współczynnika uczenia przy optymalizatorze Adam na $0.0001$. Stosuję nadal te same callbacki i uczenie przez 80 epok.
+
+```{r Architektura 3, echo=TRUE}
+model <- keras_model_sequential() %>%
+    layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu', input_shape = c(224, 224, 3)) %>%
+    layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+    layer_batch_normalization() %>%
+    layer_dropout(rate = 0.2) %>%
+  
+    layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = 'relu') %>%
+    layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+    layer_batch_normalization() %>%
+    layer_dropout(rate = 0.2) %>%
+  
+    layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = 'relu') %>%
+    layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+    layer_batch_normalization() %>%
+    layer_dropout(rate = 0.2) %>%
+  
+    layer_flatten() %>%
+    layer_dense(units = 128, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+    layer_dropout(rate = 0.2) %>%
+    layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+    layer_dropout(rate = 0.2) %>%
+    layer_dense(units = 30, activation = 'softmax')
+```
+
+```{r Summary Architektura 3}
+summary(model)
+```
+
+![Wyniki uczenia trzeciej sieci](img/model6_plot.png)
+
+Widać, że zmiany przyniosły oczekiwany efekt, jest to delikatna, ale zauważalna zmiana - udało się przekroczyć próg $0.6$ dokładności na zbiorze walidacyjnym i zmniejszyć przeuczenie. Wyniki dla metryk `top3` i `top10` nieznacząco się poprawiły.
+
+### Czwarta sieć
+
+Czwarta i ostatnia propozycja mojej własnej architektury zawiera dodatkową warstwę konwolucyjną przed warstwami gęstymi. Zdecydowałem się na ten krok widząc, że w poprzedniej iteracji poprawę przyniosło dodanie warstwy gęstej. Dodana warstwa konwolucyjna zawiera (podobnie jak wcześniejsze warstwy) dwa razy więcej filtrów niż poprzednia. Postanowiłem zmienić również wartości współczynników w warstwach `dropout`, tym razem są wyższe i zwiększają się co dwie warstwy konwolucyjne.
+
+Podobnie jak w przy poprzedniej architekturze nie zmieniałem optymalizatora, callbacków, ani czasu uczenia.
+
+```{r Architektura 4, echo=TRUE}
+model <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu', input_shape = c(224, 224, 3)) %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(rate = 0.3) %>%
+  
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = 'relu') %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(rate = 0.3) %>%
+  
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = 'relu') %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(rate = 0.4) %>%
+  
+  layer_conv_2d(filters = 256, kernel_size = c(3, 3), activation = 'relu') %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(rate = 0.4) %>%
+  
+  layer_flatten() %>%
+  layer_dense(units = 128, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+  layer_batch_normalization() %>%
+  layer_dropout(rate = 0.5) %>%
+
+  layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+  layer_batch_normalization() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 30, activation = 'softmax')
+```
+
+```{r Summary Architektura 4}
+summary(model)
+```
+
+![Wyniki uczenia czwartej sieci](img/model8_plot.png)
+
+Po raz kolejny zauważyć można wzrost dokładności na zbiorze walidacyjnym, tym razem jest on bliski $0.75$, jednak zwiększyło się również przeuczenie, względem poprzedniej architektury. Metryki `top3` i `top10` osiągnęły zadowalające wyniki - ok. $0.9$ i $0.95$.
+
+## Transfer Learning
+
+Pakiet Keras udostępnia wstępnie wytrenowane modele, w tym DenseNet201 i VGG19, które są dostępne dla użytkowników do wykorzystania np. w ramach transfer learningu. Poniżej przedstawiam wyniki uczenia tych dwóch wybranych modeli na moim zbiorze danych. W obu przypadkach do gotowej architektury dodałem dwie warstwy gęste razem z warstwami `batch normalization` i `dropout`, podobnie jak w ostatniej autorskiej architekturze. Zastosowałem również ten sam optymalizator, callbacki oraz czas uczenia.
+
+### Densenet201
+
+```{r Architektura DenseNet, echo=TRUE}
+base_model <- application_densenet201(weights = "imagenet", include_top = FALSE, input_shape = c(224, 224, 3))
+
+freeze_weights(base_model)
+
+model <- keras_model_sequential() %>%
+  base_model %>%
+
+  layer_global_average_pooling_2d() %>%
+  layer_dense(units = 128, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+  layer_batch_normalization() %>%
+  layer_dropout(rate = 0.5) %>%
+
+  layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+  layer_batch_normalization() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 30, activation = 'softmax')
+```
+
+```{r Summary Architektura DenseNet}
+summary(model)
+```
+
+![Wyniki uczenia sieci DenseNet201](img/modelDenseNet_plot.png)
+
+Jak widać model ten osiągnął dokładność podobną do czwartej proponowanej przeze mnie architektury, mając jednak zauważalnie niższe przeuczenie. Dla metryki `top3` wynik również jest podobny, wartość metryki `top10` poprawiła się.
+
+### VGG19
+
+```{r Architektura VGG19, echo=TRUE}
+base_model <- application_vgg19(weights = "imagenet", include_top = FALSE, input_shape = c(224, 224, 3))
+
+freeze_weights(base_model)
+
+model <- keras_model_sequential() %>%
+  base_model %>%
+
+  layer_global_average_pooling_2d() %>%
+  layer_dense(units = 128, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+  layer_batch_normalization() %>%
+  layer_dropout(rate = 0.5) %>%
+
+  layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(0.001)) %>%
+  layer_batch_normalization() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 30, activation = 'softmax')
+```
+
+```{r Summary Architektura VGG19}
+summary(model)
+```
+
+![Wyniki uczenia sieci VGG19](img/modelVGG19_plot.png)
+
+Model sieci VGG19 osiągnął najlepszy wynik spośród wszystkich 6 modeli, deklasując konkurencję wynikiem ponad $0.95$ dokładności na zbiorze walidacyjnym. Wartości metryki dokładności dla zbioru treningowego i walidacyjnego niemal się pokrywają, zatem efekt przeuczenia dla tego modelu jest najmniejszy. Metryki `top3` i `top10` osiągnęły wyniki zbliżone do $1.0$.
+
+# Ewaluacja modeli
+
+Ewaluację przeprowadzam dla dwóch modeli, które osiągnęły najlepsze wyniki na zbiorze walidacyjnym. Porównam zatem wyniki dla czwartej proponowanej przeze mnie architektury i sieci VGG19. Dla obu modeli przedstawię macierz konfuzji oraz przykładowe, błędnie sklasyfikowane obrazy ze zbioru testowego.
+
+## Czwarta sieć własna
+
+::: panel-tabset
+### Macierz konfuzji
+
+![Macierz konfuzji czwartej sieci własnej](img/conf_mat_8_plot.png)
+
+### Przykłady błędnych klasyfikacji
+
+![Przykładowe 9 błędnych klasyfikacji czwartej sieci własnej](img/wrong_pred_8.png)
+:::
+
+Na zbiorze testowym model osiągnął $71.62\%$ dokładności.
+
+**Najczęstsza błędna predykcja:** bile bilardowe jako szklane kulki
+
+**Najgorzej przewidywana klasa:** kulki do paintballa
+
+## VGG19
+
+::: panel-tabset
+### Macierz konfuzji
+
+![Macierz konfuzji dla sieci VGG19](img/conf_mat_vgg_plot.png)
+
+### Przykłady błędnych klasyfikacji
+
+![Przykładowe 9 błędnych klasyfikacji sieci VGG19](img/wrong_pred_vgg.png)
+:::
+
+Na zbiorze testowym model osiągnął $93.66\%$ dokładności.
+
+**Najczęstsza błędna predykcja:** pokeballe jako kule do kręgli, piłki do wodnego polo jako piłki do siatkówki
+
+**Najgorzej przewidywana klasa:** kulki do paintballa
+
+# Podsumowanie
+
+Model sieci VGG19 okazał się być dużo dokładniejszy od proponowanej przeze mnie architektury, należy jednak pamiętać, że są to modele o zupełnie różnej złożoności ($20.101.022$ parametrów vs. $5.120.030$ parametrów). W przypadku problemu z aż 30 klasami, których obiekty mają wiele cech wspólnych uważam osiągnięte przeze mnie wyniki za dobre.
